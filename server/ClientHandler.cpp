@@ -22,6 +22,10 @@
 //! The device factory make and unmake requires a process-wide mutex
 static std::mutex factoryMutex;
 
+//--- Add force_format / force_oversample globals ---
+static std::string  g_forceFormatGlobal;
+static bool         g_forceOversampleGlobal = false;
+
 /***********************************************************************
  * Client handler constructor
  **********************************************************************/
@@ -112,6 +116,13 @@ bool SoapyClientHandler::handleOnce(SoapyRPCUnpacker &unpacker, SoapyRPCPacker &
         unpacker & args;
         std::lock_guard<std::mutex> lock(factoryMutex);
         if (_dev == nullptr) _dev = SoapySDR::Device::make(args);
+
+        // stash any "force_*" passed on the --args line
+        if (args.count("force_format"))
+            g_forceFormatGlobal = args.at("force_format");
+        if (args.count("force_oversample") && args.at("force_oversample") == "true")
+            g_forceOversampleGlobal = true;
+
         packer & SOAPY_REMOTE_VOID;
     } break;
 
@@ -302,21 +313,28 @@ bool SoapyClientHandler::handleOnce(SoapyRPCUnpacker &unpacker, SoapyRPCPacker &
         unpacker & clientBindPort;
         unpacker & statusBindPort;
 
-        // --- begin force_format & force_oversample overrides ---
-        if (args.count("force_format"))
+        //---- force_format and force_oversample logic ----
+        if (!g_forceFormatGlobal.empty())
+        {
+            format = g_forceFormatGlobal;
+            SoapySDR::logf(SOAPY_SDR_INFO, "Global override stream format = %s", format.c_str());
+        }
+        else if (args.count("force_format"))
         {
             format = args.at("force_format");
-            SoapySDR::logf(SOAPY_SDR_INFO,
-                "Overriding stream format with force_format = %s",
-                format.c_str());
+            SoapySDR::logf(SOAPY_SDR_INFO, "Override stream format = %s", format.c_str());
         }
-        if (args.count("force_oversample") && args.at("force_oversample") == "true")
+
+        if (g_forceOversampleGlobal ||
+            (args.count("force_oversample") && args.at("force_oversample") == "true"))
         {
-            _dev->writeSetting("oversample", "true");
-            SoapySDR::log(SOAPY_SDR_INFO,
-                "Enabled oversample via writeSetting(\"oversample\",\"true\")");
+            try {
+                _dev->writeSetting("oversample", "true");
+                SoapySDR::log(SOAPY_SDR_INFO, "Enabled oversample via writeSetting");
+            } catch (const std::exception &ex) {
+                SoapySDR::logf(SOAPY_SDR_WARNING, "Failed to set oversample: %s", ex.what());
+            }
         }
-        // --- end overrides ---
 
         //parse args for buffer configuration
         size_t mtu = SOAPY_REMOTE_DEFAULT_ENDPOINT_MTU;
