@@ -302,6 +302,22 @@ bool SoapyClientHandler::handleOnce(SoapyRPCUnpacker &unpacker, SoapyRPCPacker &
         unpacker & clientBindPort;
         unpacker & statusBindPort;
 
+        // --- begin force_format & force_oversample overrides ---
+        if (args.count("force_format"))
+        {
+            format = args.at("force_format");
+            SoapySDR::logf(SOAPY_SDR_INFO,
+                "Overriding stream format with force_format = %s",
+                format.c_str());
+        }
+        if (args.count("force_oversample") && args.at("force_oversample") == "true")
+        {
+            _dev->writeSetting("oversample", "true");
+            SoapySDR::log(SOAPY_SDR_INFO,
+                "Enabled oversample via writeSetting(\"oversample\",\"true\")");
+        }
+        // --- end overrides ---
+
         //parse args for buffer configuration
         size_t mtu = SOAPY_REMOTE_DEFAULT_ENDPOINT_MTU;
         const auto mtuIt = args.find(SOAPY_REMOTE_KWARG_MTU);
